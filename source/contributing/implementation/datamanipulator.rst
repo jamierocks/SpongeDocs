@@ -46,8 +46,8 @@ The Constructor
 
 In most cases while implementing an abstract Manipulator you want to have two constructors:
 
-* One without arguments (no-args) which calls the second
-* and one single-argument constructor which is actually used for the provided values
+* One without arguments (no-args) which calls the second constructor with "default" values
+* The second constructor that takes all the values it supports.
 
 The second constructor must
 
@@ -76,16 +76,19 @@ The interface we implement specifies some methods to access ``Value`` objects. F
 .. code-block:: java
 
     public MutableBoundedValue<Double> health() {
-        return new SpongeBoundedValue<>(Keys.HEALTH, this.maximumHealth,
-            ComparatorUtil.doubleComparator(), 0D, (double) Float.MAX_VALUE,
-            this.currentHealth);
+        return new SpongeBoundedValue<>(Keys.HEALTH, // 1
+            this.maximumHealth,  // 2
+            ComparatorUtil.doubleComparator(), // 3
+            0D, // 4
+            (double) Float.MAX_VALUE, //5
+            this.currentHealth); // 6
     }
 
 Since we use a bounded value, our constructor is slightly longer. Therefore, the arguments are spread over multiple
-lines for this example. First the ``Key`` to properly identify the value, then the *default* value. Afterwards,
-on the second line, three arguments follow that are specific to bounded values, as they provide a comparator to
-use and minimum and maximum values. The last argument specifies the current value. If it is not present, the
-default value will be used instead.
+lines for this example. First the ``Key`` to properly identify the value (1), then the *default* value (2).
+Afterwards, on the second line, three arguments follow that are specific to bounded values, as they provide a
+comparator to use (3) and minimum (4) and maximum (5) values. The last argument (6) specifies the current value.
+If it is not present, the default value will be used instead.
 
 Copying and Serialization
 ~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -95,7 +98,7 @@ a mutable or an immutable data manipulator respectively, containing the same dat
 
 The method ``toContainer()`` is used for serialization purposes. Use a ``MemoryDataContainer`` as the result
 and apply to it the values stored within this instance. A ``DataContainer`` is basically a map mapping ``DataQuery``\ s
-to values. Since a ``Key`` always contains a corresponding ``DataQuery``, just use those using the convenience methods.
+to values. Since a ``Key`` always contains a corresponding ``DataQuery``, just use those by passing the ``Key`` directly.
 
 .. code-block:: java
 
@@ -112,11 +115,11 @@ A ``DataManipulator`` also provides methods to get and set data using keys. The 
 by ``AbstractData``, but we must tell it which data it can access and how. Therefore, in the
 ``registerGettersAndSetters()`` method we need to do the following for each value:
 
-* register a ``GetterFunction<Object>`` to directly get the value
-* register a ``SetterFunction<Object>`` to directly set the value
-* register a ``GetterFunction<Value<?>>`` to get the mutable ``Value``
+* register a ``Supplier<Object>`` to directly get the value
+* register a ``Consumer<Object>`` to directly set the value
+* register a ``Supplier<Value<?>>`` to get the mutable ``Value``
 
-Those ``GetterFunction`` and ``SetterFunction`` objects only contain one method, so Java 8 Lambdas can be used.
+Those ``Supplier`` and ``Consumer`` objects only contain one method, so Java 8 Lambdas can be used.
 
 .. code-block:: java
 
@@ -146,7 +149,7 @@ manipulators and values with many possible values (like ``SignData``) however, c
 
 .. tip::
 
-    It may be beneficial to declare the fields of an ``ImmutableDataManipulator`` as ``final`` in order to
+    You should declare the fields of an ``ImmutableDataManipulator`` as ``final`` in order to
     prevent accidental changes.
 
 3. Register the Key in the KeyRegistry
@@ -171,21 +174,23 @@ The third argument is the ``DataQuery`` used for serialization. It is created fr
 underscores and capitalization changed to upper camel case.
 
 .. tip::
-    For primitive types (like double, int, boolean), use the constant ``TYPE`` provided in its wrapper class, not the class reference.
+    For primitive types (like double, int, boolean), use the constant ``TYPE`` provided in its wrapper class,
+    not the class reference.
 
 4. Implement the DataProcessor
 ==============================
 
 Next up is the ``DataProcessor``. A ``DataProcessor`` serves as a bridge between our ``DataManipulator`` and
 Minecraft's objects. Whenever any data is requested from or offered to ``DataHolders`` that exist in Vanilla
-Minecraft, those calls end up being handled by a ``DataProcessor`` or a ``ValueProcessor``.
+Minecraft, those calls end up being delegated to a ``DataProcessor`` or a ``ValueProcessor``.
 
 For your name, you should use the name of the ``DataManipulator`` interface and append ``Processor``. Thus for ``HealthData`` we create a ``HealthDataProcessor``.
 
 In order to reduce boilerplate code, the ``DataProcessor`` should inherit from the appropriate abstract class in
 the ``org.spongepowered.common.data.processor.common`` package. Since health can only be present on certain
-entities, we can make use of the ``AbstractEntityDataProcessor`` which is specifically
-targeted at ``Entities`` based on ``net.minecraft.entity.entity``.
+entities, we can make use of the ``AbstractEntityDataProcessor`` which is specifically targeted at ``Entities`` 
+based on ``net.minecraft.entity.entity``. ``AbstractEntitySingleDataProcessor`` would require less
+implementation work, but cannot be used as ``HealthData`` contains more than just one value.
 
 .. code-block:: java
 
@@ -224,9 +229,15 @@ Setter Methods
 
 A setter method receives a ``DataHolder`` of some sort and some data that should be applied to it, if possible.
 
-The ``DataProcessor`` interface defines a ``set()`` method accepting a ``DataHolder`` and a ``DataManipulator`` which returns a ``DataTransactionResult``. Depending on the abstraction class used, some of the necessary functionality might already be implemented.
+The ``DataProcessor`` interface defines a ``set()`` method accepting a ``DataHolder`` and a ``DataManipulator``
+which returns a ``DataTransactionResult``. Depending on the abstraction class used, some of the necessary
+functionality might already be implemented.
 
-In this case, the ``AbstractEntityDataProcessor`` takes care of most of it and just requires a method to set some values to return ``true`` if it was successful and ``false`` if it was not. Creation of the ``DataTransactionResult`` is fully handled by the abstract class.
+In this case, the ``AbstractEntityDataProcessor`` takes care of most of it and just requires a method to set
+some values to return ``true`` if it was successful and ``false`` if it was not. All checks if the
+``DataHolder`` supports the ``Data`` is taken care of, the abstract class will just pass a Map mapping each
+``Key`` from the ``DataManipulator`` to its value and then construct a ``DataTransactionResult`` depending on
+whether the operation was successful or not.
 
 .. code-block:: java
 
@@ -249,7 +260,8 @@ Removal Methods
 
 The ``remove()`` method attempts to remove data from the ``DataHolder`` and returns a ``DataTransactionResult``.
 
-Since it is impossible for an ``EntityLivingBase`` to not have any health, this operation will always fail on the ``HealthDataProcessor``.
+Since it is impossible for an ``EntityLivingBase`` to not have any health, this operation will always fail on
+the ``HealthDataProcessor``.
 
 .. code-block:: java
 
@@ -281,9 +293,13 @@ and ``doesDataExist()`` both returned true.
 Filler Methods
 ~~~~~~~~~~~~~~
 
-A filler method is different from a getter method in that it receives a ``DataManipulator`` to fill with values. These values either come from a ``DataHolder`` or have to be deserialized from a ``DataContainer``. The method returns ``Optional.empty()`` if the ``DataHolder`` is incompatible.
+A filler method is different from a getter method in that it receives a ``DataManipulator`` to fill with values.
+These values either come from a ``DataHolder`` or have to be deserialized from a ``DataContainer``. The method
+returns ``Optional.empty()`` if the ``DataHolder`` is incompatible.
 
-``AbstractEntityDataProcessor`` already handles filling from ``DataHolders`` by creating a ``DataManipulator`` from the holder and then merging it with the supplied manipulator, but the ``DataContainer`` deserialization it can not provide.
+``AbstractEntityDataProcessor`` already handles filling from ``DataHolders`` by creating a ``DataManipulator``
+from the holder and then merging it with the supplied manipulator, but the ``DataContainer`` deserialization it
+can not provide.
 
 .. code-block:: java
 
