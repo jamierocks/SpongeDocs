@@ -50,6 +50,7 @@ In most cases while implementing an abstract Manipulator you want to have two co
 * and one single-argument constructor which is actually used for the provided values
 
 The second constructor must
+
 * make a call to the ``AbstractData`` constructor, passing the class reference for the implemented interface.
 * call the ``registerGettersAndSetters()`` method
 
@@ -89,7 +90,8 @@ default value will be used instead.
 Copying and Serialization
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The two methods ``copy()`` and ``asImmutable()`` are easy to implement. For both you just need to return a mutable or an immutable data manipulator respectively, containing the same data as the current instance.
+The two methods ``copy()`` and ``asImmutable()`` are not much work to implement. For both you just need to return
+a mutable or an immutable data manipulator respectively, containing the same data as the current instance.
 
 The method ``toContainer()`` is used for serialization purposes. Use a ``MemoryDataContainer`` as the result
 and apply to it the values stored within this instance. A ``DataContainer`` is basically a map mapping ``DataQuery``\ s
@@ -132,9 +134,15 @@ That's it. The ``DataManipulator`` should be done now.
 Implementing the ``ImmutableDataManipulator`` is similar to implementing the mutable one.
 
 The only differences are:
+
 * The class name is formed by prefixing the mutable ``DataManipulator``\ s name with ``Immutable``
 * Inherit from ``ImmutableAbstractData`` instead
 * Instead of ``registerGettersAndSetters()``, the method is called ``registerGetters()``
+
+When creating ``ImmutableDataHolder``\ s or ``ImmutableValue``\ s, check if it makes sense to use the
+``ImmutableDataCachingUtil``. For example if you have ``WetData`` which contains nothing more than a boolean, it
+is more feasible to retain only two cached instances of ``ImmutableWetData`` - one for each possible value. For
+manipulators and values with many possible values (like ``SignData``) however, caching may prove too expensive.
 
 .. tip::
 
@@ -144,108 +152,162 @@ The only differences are:
 3. Register the Key in the KeyRegistry
 ======================================
 
-The next step is to register your ``KEYS`` in the ``KeyRegistry``:
+The next step is to register your ``Key``\ s to the ``KeyRegistry``. To do so, locate the
+``org.spongepowered.common.data.key.KeyRegistry`` class and find the static ``registerKeys()`` function.
+There add a line to register (and create) your used keys.
 
 .. code-block:: java
 
- public static void registerKeys() {
-      keyMap.put("is_flying", makeSingleKey(Boolean.class, Value.class, of("IsFlying")));
- }
+    public static void registerKeys() {
+        keyMap.put("max_health", makeSingleKey(Double.TYPE, MutableBoundedValue.class, of("MaxHealth")));
+    }
 
+The ``keyMap`` maps strings to ``Key``\ s. The string used should be the corresponding constant name from
+the ``Keys`` utility class in lowercase. The ``Key`` itself is created by one of the static methods
+provided by ``KeyFactory``, in most cases ``makeSingleKey``. ``makeSingleKey`` requires first a class reference
+for the underlying data, which in our case is a "Double", then a class reference for the ``Value`` type used.
+The third argument is the ``DataQuery`` used for serialization. It is created from the statically imported
+``DataQuery.of()`` method accepting a string. This string should also be the constant name, stripped of
+underscores and capitalization changed to upper camel case.
+
+.. tip::
+    For primitive types (like double, int, boolean), use the constant ``TYPE`` provided in its wrapper class, not the class reference.
 
 4. Implement the DataProcessor
 ==============================
 
-Next up is the ``DataProcessor``. A ``DataProcessor`` implements your ``DataManipulator`` to work semi-natively with
-Minecraft's objects. Unfortunately, since it's always easier to just directly implement all of the processing of a
-particular set of data in one place, we have ``DataProcessor``\s to do just that. To simplify the implementation of
-``DataProcessor``\s, ``AbstractDataProcessor`` was developed to reduce boilerplate code. It brought up two additional
-``DataProcessor``\s, ``AbstractEntitySingleDataProcessor`` and ``AbstractEntityDataProcessor`` which are specifically
-targeted at ``Entities`` based on ``net.minecraft.entity.entity``. These two ``processor``\s reduce the needed code and
-leave us with this:
+Next up is the ``DataProcessor``. A ``DataProcessor`` serves as a bridge between our ``DataManipulator`` and
+Minecraft's objects. Whenever any data is requested from or offered to ``DataHolders`` that exist in Vanilla
+Minecraft, those calls end up being handled by a ``DataProcessor`` or a ``ValueProcessor``.
 
-
-.. code-block:: java
-
- protected abstract M createManipulator();
-
-  protected boolean supports(E entity) {
-      return true;
-  }
-
-  protected abstract boolean set(E entity, T value);
-
-  protected abstract Optional<T> getVal(E entity);
-
-  protected abstract ImmutableValue<T> constructImmutableValue(T value);
-
-
-createManipulator() method
-~~~~~~~~~~~~~~~~~~~~~~~~~~
+In order to reduce boilerplate code, the ``DataProcessor`` should inherit from the appropriate abstract class in
+the ``org.spongepowered.common.data.processor.common`` package. Since health can only be present on certain
+entities, we can make use of the ``AbstractEntityDataProcessor`` which is specifically
+targeted at ``Entities`` based on ``net.minecraft.entity.entity``.
 
 .. code-block:: java
 
- @Override
- protected HealthData createManipulator() {
-    return new SpongeHealthData(20, 20);
- }
+    public class HealthDataProcessor extends AbstractEntityDataProcessor<EntityLivingBase, HealthData, ImmutableHealthData> {
+        public HealthDataProcessor() {
+            super(EntityLivingBase.class);
+        }
+        [...]
+    }
 
-doesDataExist() method
-~~~~~~~~~~~~~~~~~~~~~~
+Depending on which abstraction you use, the methods you have to implement may differ greatly, depending on how
+much implementation work already could be done in the abstract class. Generally, the methods can be categorized.
 
-.. code-block:: java
-
- @Override
- protected boolean doesDataExist(EntityLivingBase entity) {
-    return true;
- }
-
-set() method
-~~~~~~~~~~~~
-
-.. code-block:: java
-
- @Override
- protected boolean set(EntityLivingBase entity, Map<Key<?>, Object> keyValues) {
-    entity.getEntityAttribute(SharedMonsterAttributes.maxHealth).setBaseValue(((Double) keyValues.get(Keys.MAX_HEALTH)).floatValue());
-    entity.setHealth(((Double) keyValues.get(Keys.HEALTH)).floatValue());
-    return true;
- }
-
-getValues(DataContainer)
-~~~~~~~~~~~~~~~~~~~~~~~~
-
-.. code-block:: java
-
- @Override
- protected Map<Key<?>, ?> getValues(EntityLivingBase entity) {
-    final double health = entity.getHealth();
-    final double maxHealth = entity.getMaxHealth();
-    return ImmutableMap.<Key<?>, Object>of(Keys.HEALTH, health, Keys.MAX_HEALTH, maxHealth);
- }
-
-
-fill(DataContainer)
-~~~~~~~~~~~~~~~~~~~
-
-.. code-block:: java
-
- @Override
- public Optional<HealthData> fill(DataContainer container, HealthData healthData) {
-    healthData.set(Keys.MAX_HEALTH, getData(container, Keys.MAX_HEALTH));
-    healthData.set(Keys.HEALTH, getData(container, Keys.HEALTH));
-    return Optional.of(healthData);
- }
-
-remove(DataHolder)
+Validation Methods
 ~~~~~~~~~~~~~~~~~~
 
+Always return a boolean value. If the method is called ``supports()`` it should perform a general check if the supplied target generally supports the kind of data handled by our ``DataProcessor``.
+
+For our ``HealthDataProcessor`` ``supports()`` is implemented by the ``AbstractEntityDataProcessor``. Per
+default, it will return true if the supplied argument is an instance of the class specified when calling the
+``super()`` constructor.
+
+Instead, we are required to provide a ``doesDataExist()`` method. Since the abstraction does not know how to
+obtain the data, it leaves this function to be implemented. As the name says, the method should check if the data
+already exists on the supported target. For the ``HealthDataProcessor``, this always returns true, since every
+living entity always has health.
+
 .. code-block:: java
 
- @Override
- public DataTransactionResult remove(DataHolder dataHolder) {
-    return DataTransactionBuilder.builder().result(DataTransactionResult.Type.FAILURE).build();
- }
+    protected boolean doesDataExist(EntityLivingBase entity) {
+        return true;
+    }
+
+Setter Methods
+~~~~~~~~~~~~~~
+
+A setter method receives a ``DataHolder`` of some sort and some data that should be applied to it, if possible.
+
+The ``DataProcessor`` interface defines a ``set()`` method accepting a ``DataHolder`` and a ``DataManipulator`` which returns a ``DataTransactionResult``. Depending on the abstraction class used, some of the necessary functionality might already be implemented.
+
+In this case, the ``AbstractEntityDataProcessor`` takes care of most of it and just requires a method to set some values to return ``true`` if it was successful and ``false`` if it was not. Creation of the ``DataTransactionResult`` is fully handled by the abstract class.
+
+.. code-block:: java
+
+    protected boolean set(EntityLivingBase entity, Map<Key<?>, Object> keyValues) {
+        entity.getEntityAttribute(SharedMonsterAttributes.maxHealth)
+            .setBaseValue(((Double) keyValues.get(Keys.MAX_HEALTH)).floatValue());
+        entity.setHealth(((Double) keyValues.get(Keys.HEALTH)).floatValue());
+        return true;
+    }
+
+.. tip::
+
+    To understand ``DataTransactionResult`` \ s, check the :doc:`corresponding docs page
+    <../../plugin/data/transactions>` and refer to the `DataTransactionBuilder API
+    Docs <https://jd.spongepowered.org/index.html?org/spongepowered/api/data/DataTransactionBuilder.html>`_ to
+    create one.
+
+Removal Methods
+~~~~~~~~~~~~~~~
+
+The ``remove()`` method attempts to remove data from the ``DataHolder`` and returns a ``DataTransactionResult``.
+
+Since it is impossible for an ``EntityLivingBase`` to not have any health, this operation will always fail on the ``HealthDataProcessor``.
+
+.. code-block:: java
+
+    public DataTransactionResult remove(DataHolder dataHolder) {
+        return DataTransactionBuilder.failNoData();
+    }
+
+
+Getter Methods
+~~~~~~~~~~~~~~
+
+Getter methods obtain data from a ``DataHolder`` and return an optional ``DataManipulator``. The
+``DataProcessor`` interface specifies the methods ``from()`` and ``createFrom()``, the difference being that
+``from()`` will return ``Optional.empty()`` if the data holder is compatible, but currently does not contain the
+data, while ``createFrom()`` will provide a ``DataManipulator`` holding default values in that case.
+
+Again, ``AbstractEntityDataProcessor`` will provide most of the implementation for this and only requires a
+method to get the actual values present on the ``DataHolder``. This method is only called after ``supports()``
+and ``doesDataExist()`` both returned true.
+
+.. code-block:: java
+
+    protected Map<Key<?>, ?> getValues(EntityLivingBase entity) {
+        final double health = entity.getHealth();
+        final double maxHealth = entity.getMaxHealth();
+        return ImmutableMap.<Key<?>, Object>of(Keys.HEALTH, health, Keys.MAX_HEALTH, maxHealth);
+    }
+
+Filler Methods
+~~~~~~~~~~~~~~
+
+A filler method is different from a getter method in that it receives a ``DataManipulator`` to fill with values. These values either come from a ``DataHolder`` or have to be deserialized from a ``DataContainer``. The method returns ``Optional.empty()`` if the ``DataHolder`` is incompatible.
+
+``AbstractEntityDataProcessor`` already handles filling from ``DataHolders`` by creating a ``DataManipulator`` from the holder and then merging it with the supplied manipulator, but the ``DataContainer`` deserialization it can not provide.
+
+.. code-block:: java
+
+    public Optional<HealthData> fill(DataContainer container, HealthData healthData) {
+        healthData.set(Keys.MAX_HEALTH, DataUtil.getData(container, Keys.MAX_HEALTH));
+        healthData.set(Keys.HEALTH, DataUtil.getData(container, Keys.HEALTH));
+        return Optional.of(healthData);
+    }
+
+Other Methods
+~~~~~~~~~~~~~
+
+Depending on the abstract superclass used, some other methods may be required. For instance,
+``AbstractEntityDataProcessor`` needs to create ``DataManipulator`` instances in various points. It can't do this
+since it knows neither the implementation class nor the constructor to use. Therefore it utilizes an abstract
+function that has to be provided by the final implementation. This does nothing more than create a
+``DataManipulator`` with default data.
+
+If you implemented your ``DataManipulator`` as recommended, you can just use the empty constructor.
+
+.. code-block:: java
+
+    protected HealthData createManipulator() {
+        return new SpongeHealthData();
+    }
+
 
 5. Implement the DataBuilder
 ============================
