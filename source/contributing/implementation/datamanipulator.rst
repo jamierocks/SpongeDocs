@@ -15,60 +15,113 @@ When these steps are complete, the following must also be done:
 
 3. Register the ``Key`` in the ``KeyRegistry``
 #. Implement the ``DataProcessor``
+#. Implement the ``DataBuilder``
 #. Implement the ``ValueProcessor`` for each value being represented by the ``DataManipulator``
 #. Register everything in ``SpongeGameRegistry``
 
 .. note::
-  Don't forget to add an empty line at the end of every file you create.
+    Make sure you follow our :doc:`../guidelines`.
 
 1. Implementing the DataManipulator
 ===================================
 
-Implementing the ``DataManipulator`` is done by extending ``AbstractData`` in the easiest case. Let's assume we have a
-single value based manipulator, eg. the ``flying`` state on an entity, which can be ``true`` or ``false``.
-We decide to abstract things, so now we're able to just extend ``AbstractBooleanData``.
-Here is a short example:
+The naming convention for ``DataManipulator`` implementations is the name of the interface prefixed with "Sponge".
+So to implement the ``HealthData`` interface, we create a class named ``SpongeHealthData`` in the appropriate package.
+For implementing the ``DataManipulator`` first have it extend an appropriate abstract class from the
+``org.spongepowered.common.data.manipulator.mutable.common`` package. The most generic there is ``AbstractData``
+but there are also abstractions that reduce boilerplate code even more for some special cases like
+``DataManipulator``\ s only containing a single value.
 
 .. code-block:: java
 
-  public class SpongeFlyingData extends AbstractBooleanData<FlyingData, ImmutableFlyingData> implements FlyingData {
- /* your code here */
-  }
+    public class SpongeHealthData extends AbstractData<HealthData, ImmutableHealthData> implements HealthData {
+        [...]
+    }
 
-The next step is to provide the generic ``DataManipulator`` that follows the generic of ``FlyingData``. In this case
-we use ``FlyingData.class`` in our ``super`` constructor, followed by the ``Key`` which identifies the recommended
-``value`` of the flying state and last but not least the ``Key`` itself: ``Keys.IS_FLYING``.
+There are two type arguments to the AbstractData class. The first is the interface implemented by this class, the
+second is the interface implemented by the corresponding ``ImmutableDataManipulator``.
 
-.. code-block:: java
-
- public SpongeFlyingData(boolean flying) {
-          super(FlyingData.class, flying, Keys.IS_FLYING);
- }
+The Constructor
+~~~~~~~~~~~~~~~
 
 In most cases while implementing an abstract Manipulator you want to have two constructors:
 
 * One without arguments (no-args) which calls the second
-* and one single-argument constructor which is actually used for the provided ``value``
+* and one single-argument constructor which is actually used for the provided values
 
-Now, after the Manipulator is done you have to check if you are extending ``AbstractData`` or not.
-Remember that we decided to extend ``AbstractBooleanData`` above, hence now must call ``registerFieldGetter()`` and
-``registerFieldSetter()`` in your constructor. Don't forget the ``Field`` registration!
+The second constructor must
+* make a call to the ``AbstractData`` constructor, passing the class reference for the implemented interface.
+* call the ``registerGettersAndSetters()`` method
 
 .. code-block:: java
 
- private void registerStuff() {
-      registerFieldGetter(Keys.IS_FLYING, new GetterFunction<Object>() {
-             @Override
-             public Value get() {
-                 return getflying();
-             }
-         });
-      registerFieldSetter(Keys.IS_FLYING, new SetterFunction<Object>() {
-              @Override
-              public void set(Object value) {
-                   setFlying(((Boolean) value).booleanValue());
-              }
-          });
+    public SpongeHealthData() {
+        this(20D, 20D);
+    }
+
+    public SpongeHealthData(double currentHealth, double maxHealth) {
+        super(HealthData.class);
+        this.currentHealth = currentHealth;
+        this.maximumHealth = maxHealth;
+        this.registerGettersAndSetters();
+    }
+
+Accessors defined by the Interface
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The interface we implement specifies some methods to access ``Value`` objects. For ``HealthData``, those are
+``health()`` and ``maxHealth()``. Every call to those should yield a new ``Value``.
+
+.. code-block:: java
+
+    public MutableBoundedValue<Double> health() {
+        return new SpongeBoundedValue<>(Keys.HEALTH, this.maximumHealth,
+            ComparatorUtil.doubleComparator(), 0D, (double) Float.MAX_VALUE,
+            this.currentHealth);
+    }
+
+Since we use a bounded value, our constructor is slightly longer. Therefore, the arguments are spread over multiple
+lines for this example. First the ``Key`` to properly identify the value, then the *default* value. Afterwards,
+on the second line, three arguments follow that are specific to bounded values, as they provide a comparator to
+use and minimum and maximum values. The last argument specifies the current value. If it is not present, the
+default value will be used instead.
+
+Copying and Serialization
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The two methods ``copy()`` and ``asImmutable()`` are easy to implement. For both you just need to return a mutable or an immutable data manipulator respectively, containing the same data as the current instance.
+
+The method ``toContainer()`` is used for serialization purposes. Use a ``MemoryDataContainer`` as the result
+and apply to it the values stored within this instance. A ``DataContainer`` is basically a map mapping ``DataQuery``\ s
+to values. Since a ``Key`` always contains a corresponding ``DataQuery``, just use those using the convenience methods.
+
+.. code-block:: java
+
+    public DataContainer toContainer() {
+        return new MemoryDataContainer()
+            .set(Keys.HEALTH, this.currentHealth)
+            .set(Keys.MAX_HEALTH, this.maximumHealth);
+    }
+
+registerGettersAndSetters()
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A ``DataManipulator`` also provides methods to get and set data using keys. The implementation for this is handled
+by ``AbstractData``, but we must tell it which data it can access and how. Therefore, in the
+``registerGettersAndSetters()`` method we need to do the following for each value:
+
+* register a ``GetterFunction<Object>`` to directly get the value
+* register a ``SetterFunction<Object>`` to directly set the value
+* register a ``GetterFunction<Value<?>>`` to get the mutable ``Value``
+
+Those ``GetterFunction`` and ``SetterFunction`` objects only contain one method, so Java 8 Lambdas can be used.
+
+.. code-block:: java
+
+ private void registerGettersAndSetters() {
+      registerFieldGetter(Keys.HEALTH, () -> SpongeHealthData.this.currentHealth);
+      registerFieldSetter(Keys.HEALTH, value -> SpongeHealthData.this.currentHealth ((Number) value).doubleValue()));
+      registerKeyValue(Keys.HEALTH, SpongeHealthData.this::health);
   }
 
 That's it. The ``DataManipulator`` should be done now.
@@ -76,10 +129,17 @@ That's it. The ``DataManipulator`` should be done now.
 2. ImmutableDataManipulator
 ===========================
 
-Just repeat the above mentioned steps for the ``ImmutableDataManipulator``.
+Implementing the ``ImmutableDataManipulator`` is similar to implementing the mutable one.
 
-Now, after the ``Manipulators`` are done we have to register the ``KEY`` and finally implement the
-``DataProcessor`` and ``ValueProcessor``.
+The only differences are:
+* The class name is formed by prefixing the mutable ``DataManipulator``\ s name with ``Immutable``
+* Inherit from ``ImmutableAbstractData`` instead
+* Instead of ``registerGettersAndSetters()``, the method is called ``registerGetters()``
+
+.. tip::
+
+    It may be beneficial to declare the fields of an ``ImmutableDataManipulator`` as ``final`` in order to
+    prevent accidental changes.
 
 3. Register the Key in the KeyRegistry
 ======================================
@@ -121,7 +181,7 @@ leave us with this:
 
 
 createManipulator() method
---------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. code-block:: java
 
@@ -131,7 +191,7 @@ createManipulator() method
  }
 
 doesDataExist() method
-----------------------
+~~~~~~~~~~~~~~~~~~~~~~
 
 .. code-block:: java
 
@@ -141,7 +201,7 @@ doesDataExist() method
  }
 
 set() method
-------------
+~~~~~~~~~~~~
 
 .. code-block:: java
 
@@ -153,7 +213,7 @@ set() method
  }
 
 getValues(DataContainer)
-------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. code-block:: java
 
@@ -166,7 +226,7 @@ getValues(DataContainer)
 
 
 fill(DataContainer)
--------------------
+~~~~~~~~~~~~~~~~~~~
 
 .. code-block:: java
 
@@ -178,7 +238,7 @@ fill(DataContainer)
  }
 
 remove(DataHolder)
-------------------
+~~~~~~~~~~~~~~~~~~
 
 .. code-block:: java
 
@@ -187,14 +247,17 @@ remove(DataHolder)
     return DataTransactionBuilder.builder().result(DataTransactionResult.Type.FAILURE).build();
  }
 
-5. Implement the ValueProcessor
+5. Implement the DataBuilder
+============================
+
+6. Implement the ValueProcessor
 ===============================
 
-6. Register everything in SpongeGameRegistry
+7. Register everything in SpongeGameRegistry
 ============================================
 
 When finally done, you have to register everything in ``SpongeGameRegistry``. As always, add all necessary imports, then the ``DataProcessor`` and
-``Databuilder``:
+``DataBuilder``:
 
 .. code-block:: java
 
@@ -213,8 +276,8 @@ And finally the ``ValueProcessor``:
   dataRegistry.registerValueProcessor(Keys.IS_FLYING, new IsFlyingValueProcessor());
  }
 
-7. Examples
-===========
+Examples
+========
 
 Several ``DataManipulators`` have already been implemented. Have a look at them to get a quick overview on how to implement your own ``Manipulator``.
 Here are some examples which might help you understanding the concept of ``DataManipulator``:
