@@ -22,8 +22,8 @@ When these steps are complete, the following must also be done:
 .. note::
     Make sure you follow our :doc:`../guidelines`.
 
-1. Implementing the DataManipulator
-===================================
+1. Implement the DataManipulator
+================================
 
 The naming convention for ``DataManipulator`` implementations is the name of the interface prefixed with "Sponge".
 So to implement the ``HealthData`` interface, we create a class named ``SpongeHealthData`` in the appropriate package.
@@ -128,8 +128,8 @@ Those ``GetterFunction`` and ``SetterFunction`` objects only contain one method,
 
 That's it. The ``DataManipulator`` should be done now.
 
-2. ImmutableDataManipulator
-===========================
+2. Implement the ImmutableDataManipulator
+=========================================
 
 Implementing the ``ImmutableDataManipulator`` is similar to implementing the mutable one.
 
@@ -179,6 +179,8 @@ underscores and capitalization changed to upper camel case.
 Next up is the ``DataProcessor``. A ``DataProcessor`` serves as a bridge between our ``DataManipulator`` and
 Minecraft's objects. Whenever any data is requested from or offered to ``DataHolders`` that exist in Vanilla
 Minecraft, those calls end up being handled by a ``DataProcessor`` or a ``ValueProcessor``.
+
+For your name, you should use the name of the ``DataManipulator`` interface and append ``Processor``. Thus for ``HealthData`` we create a ``HealthDataProcessor``.
 
 In order to reduce boilerplate code, the ``DataProcessor`` should inherit from the appropriate abstract class in
 the ``org.spongepowered.common.data.processor.common`` package. Since health can only be present on certain
