@@ -80,15 +80,24 @@ The interface we implement specifies some methods to access ``Value`` objects. F
             this.maximumHealth,  // 2
             ComparatorUtil.doubleComparator(), // 3
             0D, // 4
-            (double) Float.MAX_VALUE, //5
+            (double) Float.MAX_VALUE, // 5
             this.currentHealth); // 6
     }
 
-Since we use a bounded value, our constructor is slightly longer. Therefore, the arguments are spread over multiple
-lines for this example. First the ``Key`` to properly identify the value (1), then the *default* value (2).
-Afterwards, on the second line, three arguments follow that are specific to bounded values, as they provide a
-comparator to use (3) and minimum (4) and maximum (5) values. The last argument (6) specifies the current value.
-If it is not present, the default value will be used instead.
+Since we use a bounded value, our constructor is slightly longer.
+
+.. csv-table::
+    :header: "Number", "Parameter", "Needed for"
+    :widths: 4, 40, 40
+
+    "1", "``Key`` identifying the value", "every subclass of ``BaseValue``"
+    "2", "the default value", "every subclass of ``BaseValue``"
+    "3", "the ``Comparator`` to use", "bounded values"
+    "4", "the minimum acceptable value", "bounded values"
+    "5", "the maximum acceptable value", "bounded values"
+    "6", "the current value", "every subclass of ``BaseValue``, can be omitted"
+
+If no current value is specified, calling ``get()`` on the ``Value`` returns the default value.
 
 Copying and Serialization
 ~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -188,7 +197,7 @@ For your name, you should use the name of the ``DataManipulator`` interface and 
 
 In order to reduce boilerplate code, the ``DataProcessor`` should inherit from the appropriate abstract class in
 the ``org.spongepowered.common.data.processor.common`` package. Since health can only be present on certain
-entities, we can make use of the ``AbstractEntityDataProcessor`` which is specifically targeted at ``Entities`` 
+entities, we can make use of the ``AbstractEntityDataProcessor`` which is specifically targeted at ``Entities``
 based on ``net.minecraft.entity.entity``. ``AbstractEntitySingleDataProcessor`` would require less
 implementation work, but cannot be used as ``HealthData`` contains more than just one value.
 
