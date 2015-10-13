@@ -165,7 +165,7 @@ manipulators and values with many possible values (like ``SignData``) however, c
 ======================================
 
 The next step is to register your ``Key``\ s to the ``KeyRegistry``. To do so, locate the
-``org.spongepowered.common.data.key.KeyRegistry`` class and find the static ``registerKeys()`` function.
+``org.spongepowered.common.data.key.KeyRegistry`` class and find the static ``generateKeyMap()`` function.
 There add a line to register (and create) your used keys.
 
 .. code-block:: java
@@ -198,7 +198,7 @@ For your name, you should use the name of the ``DataManipulator`` interface and 
 In order to reduce boilerplate code, the ``DataProcessor`` should inherit from the appropriate abstract class in
 the ``org.spongepowered.common.data.processor.common`` package. Since health can only be present on certain
 entities, we can make use of the ``AbstractEntityDataProcessor`` which is specifically targeted at ``Entities``
-based on ``net.minecraft.entity.entity``. ``AbstractEntitySingleDataProcessor`` would require less
+based on ``net.minecraft.entity.Entity``. ``AbstractEntitySingleDataProcessor`` would require less
 implementation work, but cannot be used as ``HealthData`` contains more than just one value.
 
 .. code-block:: java
@@ -212,6 +212,12 @@ implementation work, but cannot be used as ``HealthData`` contains more than jus
 
 Depending on which abstraction you use, the methods you have to implement may differ greatly, depending on how
 much implementation work already could be done in the abstract class. Generally, the methods can be categorized.
+
+.. tip::
+
+    It is possible to create multiple ``DataProcessor``\ s for the same data. If vastly different ``DataHolder``\ s
+    should be supported (for example both a ``TileEntity`` and a matching ``ItemStack``), it may be beneficial to
+    create one processor for each type of ``DataHolder`` in order to make full use of the provided abstractions.
 
 Validation Methods
 ~~~~~~~~~~~~~~~~~~
@@ -327,7 +333,7 @@ since it knows neither the implementation class nor the constructor to use. Ther
 function that has to be provided by the final implementation. This does nothing more than create a
 ``DataManipulator`` with default data.
 
-If you implemented your ``DataManipulator`` as recommended, you can just use the empty constructor.
+If you implemented your ``DataManipulator`` as recommended, you can just use the no-args constructor.
 
 .. code-block:: java
 
@@ -339,38 +345,147 @@ If you implemented your ``DataManipulator`` as recommended, you can just use the
 5. Implement the DataBuilder
 ============================
 
-6. Implement the ValueProcessor
-===============================
+A ``DataBuilder`` is used to create a ``DataManipulator`` from default data, a ``DataHolder``, or a ``DataView``
+or default data. It is exposed in the API via the ``SerializationService``.
 
-7. Register everything in SpongeGameRegistry
-============================================
+If you implemented your ``DataManipulator`` as recommended, the ``create()`` method only requires usage of the no-args constructor. The ``createFrom(DataHolder)`` method essentially duplicates the method of the same name from your ``DataProcessor``\ s.
 
-When finally done, you have to register everything in ``SpongeGameRegistry``. As always, add all necessary imports, then the ``DataProcessor`` and
-``DataBuilder``:
+The only truly unique method in the ``DataBuilder`` is the ``build(DataView)`` method. It acts as the counterpart to your ``DataManipulator``\ s ``toContainer()`` method.
+
+
+6. Implement the ValueProcessors
+================================
+
+Not only a ``DataManipulator`` may be offered to a ``DataHolder``, but also a keyed ``Value`` on its own.
+Therefore, you need to provide at least one ``ValueProcessor`` for every ``Key`` present in your
+``DataManipulator``. A ``ValueProcessor`` is named after the constant name of its ``Key`` in the ``Keys`` class
+in a fashion similar to its ``DataQuery``. The constant name is stripped of underscores, used in upper camel case
+and then suffixed with ``ValueProcessor``.
+
+A ``ValueProcessor`` should always inherit from ``AbstractSpongeValueProcessor``, which already will handle a
+portion of the ``supports()`` checks based on the type of the ``DataHolder``. For ``Keys.HEALTH``, we'll create
+and construct ``HealthValueProcessor`` as follows.
 
 .. code-block:: java
 
- private void setupSerialization() {
-  final FlyingDataProcessor flyingDataProcessor = new FlyingDataProcessor();
-        final FlyingDataBuilder flyingDataBuilder = new FlyingDataBuilder();
-        service.registerBuilder(FlyingData.class, flyingDataBuilder);
-         dataRegistry.registerDataProcessorAndImpl(FlyingData.class, SpongeFlyingData.class, ImmutableFlyingData.class, ImmutableSpongeFlyingData.class, flyingDataProcessor, flyingDataBuilder);
- }
+    public class HealthValueProcessor extends AbstractSpongeValueProcessor<EntityLivingBase, Double,
+        MutableBoundedValue<Double> {
 
-And finally the ``ValueProcessor``:
+        public HealthValueProcessor() {
+            super(EntityLivingBase.class, Keys.HEALTH);
+        }
+
+        [...]
+    }
+
+Now the ``AbstractSpongeValueProcessor`` will relieve us of the necessity to check if the value is supported.
+It is assumed to be supported if the target ``ValueContainer`` is of the type ``EntityLivingBase``.
+
+.. tip::
+
+    For a more fine-grained control over what ``EntityLivingBase`` objects are supported, the
+    ``supports(EntityLivingBase)`` method can be overridden.
+
+Again, most work is done by the abstraction class. We just need to implement two helper methods for creating
+a ``Value`` and its immutable counterpart and three methods to get, set and remove data.
 
 .. code-block:: java
 
- private void setupSerialization() {
-  dataRegistry.registerValueProcessor(Keys.IS_FLYING, new IsFlyingValueProcessor());
- }
+    protected MutableBoundedValue<Double> constructValue(Double value) {
+        return new SpongeBoundedValue<>(Keys.HEALTH, 20D,
+            ComparatorUtil.doubleComparator(), 0D, (double) Float.MAX_VALUE,
+            value);
+    }
 
-Examples
-========
+    protected ImmutableValue<Double> constructImmutableValue(Double value) {
+        return new ImmutableSpongeBoundedValue<>(Keys.HEALTH, value, 20D,
+            ComparatorUtil.doubleComparator(), 0D, (double) Float.MAX_VALUE);
+    }
 
-Several ``DataManipulators`` have already been implemented. Have a look at them to get a quick overview on how to implement your own ``Manipulator``.
-Here are some examples which might help you understanding the concept of ``DataManipulator``:
+.. tip::
 
-* `VelocityData <https://github.com/SpongePowered/SpongeCommon/commit/ab47f2681dd382a44f1d32d92858bd29c2910ff3>`_
-* `BreathingData <https://github.com/SpongePowered/SpongeCommon/commit/f461697e0a6de7840e7cdb6e739d97cb176d7617>`_
-* `FoodData <https://github.com/SpongePowered/SpongeCommon/commit/19c13cb71ea3e1d8cd67372b7f272fe298c21902>`_
+    Since the actual value is a required parameter for immutable bounded values, the order of parameters differs
+    between the constructors.
+
+.. code-block:: java
+
+    protected Optional<Double> getVal(EntityLivingBase container) {
+        return Optional.of((double) container.getHealth());
+    }
+
+Since it is impossible for an ``EntityLivingBase`` to not have health, this method will never return
+``Optional.empty()``.
+
+.. code-block:: java
+
+    protected boolean set(EntityLivingBase container, Double value) {
+        if (value >= 0D && value <= (double) Float.MAX_VALUE) {
+            container.setHealth(value.floatValue());
+            return true;
+        }
+        return false;
+    }
+
+The ``set()`` method will return a boolean value indicating whether the value could successfully be set.
+This implementation will reject values outside of the bounds used in our value construction methods above.
+
+.. code-block:: java
+
+    public DataTransactionResult removeFrom(ValueContainer<?> container) {
+        return DataTransactionBuilder.failNoData();
+    }
+
+Since the data is guaranteed to be always present, attempts to remove it will just fail.
+
+7. Register Builders and Processors
+===================================
+
+In order for Sponge to be able to use our manipulators and processors, we need to register them. This is done
+in the ``org.spongepowered.common.data.SpongeSerializationRegistry`` class. In the ``setupSerialization`` method
+there are two large blocks of registrations to which we add our processors.
+
+DataProcessors and the Builder
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A ``DataProcessor`` is registered alongside the interface and implementation classes of the ``DataManipulator`` it
+handles. For every pair of mutable / immutable ``DataManipulator``\ s at least one ``DataProcessor`` and exactly
+one ``DataBuilder`` must be registered. Additionally, the ``DataBuilder`` must be registered to the
+``SerializationService``.
+
+.. code-block:: java
+
+    final HealthDataBuilder healthDataBuilder = new HealthDataBuilder();
+    service.registerBuilder(HealthData.class, healthDataBuilder);
+    dataRegistry.registerDataProcessorAndImplBuilder(HealthData.class, SpongeHealthData.class,
+        ImmutableHealthData.class, ImmutableSpongeHealthData.class,
+        new HealthDataProcessor(), healthDataBuilder);
+
+.. tip::
+
+    To register additional data processors use ``registerDataProcessorAndImpl()`` with the same arguments save
+    for the last. Multiple calls to ``registerDataProcessorAndImplBuilder()`` will fail as builder registration
+    can only be performed once
+
+
+ValueProcessors
+~~~~~~~~~~~~~~~
+
+Value processors are registered at the bottom of the very same function. For each ``Key`` multiple processors
+can be registered by subsequent calls of the ``registerValueProcessor()`` method.
+
+.. code-block:: java
+
+    dataRegistry.registerValueProcessor(Keys.HEALTH, new HealthValueProcessor());
+    dataRegistry.registerValueProcessor(Keys.MAX_HEALTH, new MaxHealthValueProcessor());
+
+
+Further Information
+===================
+
+With ``Data`` being a rather abstract concept in Sponge, it is hard to give general directions on how to
+acquire the needed data from the Minecraft classes itself. It may be helpful to take a look at already
+implemented processors similar to the one you are working on to get a better understanding of how it should work.
+
+If you are stuck or are unsure about certain aspects, go visit the ``#spongedev`` IRC channel, the forums, or
+open up an Issue on github. Be sure to check the `Data Processor Implementation Checklist <https://github.com/SpongePowered/SpongeCommon/issues/8>`_ for general
+contribution requirements.
