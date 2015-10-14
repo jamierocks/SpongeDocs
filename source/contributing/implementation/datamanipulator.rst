@@ -171,7 +171,7 @@ There add a line to register (and create) your used keys.
 .. code-block:: java
 
     public static void registerKeys() {
-        keyMap.put("max_health", makeSingleKey(Double.TYPE, MutableBoundedValue.class, of("MaxHealth")));
+        keyMap.put("max_health", makeSingleKey(Double.class, MutableBoundedValue.class, of("MaxHealth")));
     }
 
 The ``keyMap`` maps strings to ``Key``\ s. The string used should be the corresponding constant name from
@@ -182,9 +182,6 @@ The third argument is the ``DataQuery`` used for serialization. It is created fr
 ``DataQuery.of()`` method accepting a string. This string should also be the constant name, stripped of
 underscores and capitalization changed to upper camel case.
 
-.. tip::
-    For primitive types (like double, int, boolean), use the constant ``TYPE`` provided in its wrapper class,
-    not the class reference.
 
 4. Implement the DataProcessor
 ==============================
