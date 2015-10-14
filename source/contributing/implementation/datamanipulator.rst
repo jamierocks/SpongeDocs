@@ -17,7 +17,7 @@ When these steps are complete, the following must also be done:
 #. Implement the ``DataProcessor``
 #. Implement the ``DataBuilder``
 #. Implement the ``ValueProcessor`` for each value being represented by the ``DataManipulator``
-#. Register everything in ``SpongeGameRegistry``
+#. Register everything in the ``SpongeSerializationRegistry``
 
 .. note::
     Make sure you follow our :doc:`../guidelines`.
@@ -124,17 +124,17 @@ A ``DataManipulator`` also provides methods to get and set data using keys. The 
 by ``AbstractData``, but we must tell it which data it can access and how. Therefore, in the
 ``registerGettersAndSetters()`` method we need to do the following for each value:
 
-* register a ``Supplier<Object>`` to directly get the value
-* register a ``Consumer<Object>`` to directly set the value
-* register a ``Supplier<Value<?>>`` to get the mutable ``Value``
+* register a ``Supplier`` to directly get the value
+* register a ``Consumer`` to directly set the value
+* register a ``Supplier<Value>`` to get the mutable ``Value``
 
-Those ``Supplier`` and ``Consumer`` objects only contain one method, so Java 8 Lambdas can be used.
+``Supplier`` and ``Consumer`` are functional interfaces, so Java 8 Lambdas can be used.
 
 .. code-block:: java
 
  private void registerGettersAndSetters() {
       registerFieldGetter(Keys.HEALTH, () -> SpongeHealthData.this.currentHealth);
-      registerFieldSetter(Keys.HEALTH, value -> SpongeHealthData.this.currentHealth ((Number) value).doubleValue()));
+      registerFieldSetter(Keys.HEALTH, value -> SpongeHealthData.this.currentHealth = value);
       registerKeyValue(Keys.HEALTH, SpongeHealthData.this::health);
   }
 
@@ -488,5 +488,6 @@ acquire the needed data from the Minecraft classes itself. It may be helpful to 
 implemented processors similar to the one you are working on to get a better understanding of how it should work.
 
 If you are stuck or are unsure about certain aspects, go visit the ``#spongedev`` IRC channel, the forums, or
-open up an Issue on github. Be sure to check the `Data Processor Implementation Checklist <https://github.com/SpongePowered/SpongeCommon/issues/8>`_ for general
+open up an Issue on github. Be sure to check the `Data Processor Implementation Checklist
+<https://github.com/SpongePowered/SpongeCommon/issues/8>`_ for general
 contribution requirements.
