@@ -342,15 +342,16 @@ If you implemented your ``DataManipulator`` as recommended, you can just use the
     }
 
 
-5. Implement the DataBuilder
-============================
+5. Implement the DataManipulatorBuilder
+=======================================
 
-A ``DataBuilder`` is used to create a ``DataManipulator`` from default data, a ``DataHolder``, or a ``DataView``
-or default data. It is exposed in the API via the ``SerializationService``.
+A ``DataManipulatorBuilder`` is used to create a ``DataManipulator`` from default data or a ``DataHolder``. It also extends ``DataBuilder``, which is used to deserialize a ``DataSerializable`` from a ``DataView``. Once registered, our ``DataManipulatorBuilder`` will be exposed in the API both in the ``DataRegistry`` and the ``SerializationService``.
 
-If you implemented your ``DataManipulator`` as recommended, the ``create()`` method only requires usage of the no-args constructor. The ``createFrom(DataHolder)`` method essentially duplicates the method of the same name from your ``DataProcessor``\ s.
+If you implemented your ``DataManipulator`` as recommended, the ``create()`` method only requires usage of the no-args constructor. The ``createFrom(DataHolder)`` method essentially duplicates the method of the same name from your ``DataProcessor``.
 
-The only truly unique method in the ``DataBuilder`` is the ``build(DataView)`` method. It acts as the counterpart to your ``DataManipulator``\ s ``toContainer()`` method.
+The ``build(DataView)`` method acts as the counterpart to our ``DataManipulator``\ s ``toContainer()`` method.
+It will return ``Optional.empty()`` if the data needed for our ``DataManipulator`` is not present in the given
+``DataView``.
 
 
 6. Implement the ValueProcessors
@@ -444,8 +445,8 @@ In order for Sponge to be able to use our manipulators and processors, we need t
 in the ``org.spongepowered.common.data.SpongeSerializationRegistry`` class. In the ``setupSerialization`` method
 there are two large blocks of registrations to which we add our processors.
 
-DataProcessors and the Builder
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+DataProcessors and Builders
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 A ``DataProcessor`` is registered alongside the interface and implementation classes of the ``DataManipulator`` it
 handles. For every pair of mutable / immutable ``DataManipulator``\ s at least one ``DataProcessor`` and exactly
